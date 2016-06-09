@@ -3,9 +3,10 @@
 import os
 import datetime
 import random
+import json
 import MySQLdb
 
-from bottle import route, run, debug, template, request, static_file
+from bottle import route, run, debug, template, request, static_file, auth_basic
 
 # index.pyが設置されているディレクトリの絶対パスを取得
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,8 +17,16 @@ COFFEE_PATH = os.environ.get("COFFEE_PATH")
 
 source_str = 'abcdefghijklmnopqrstuvwxyz'
 
-connector = MySQLdb.connect(host="localhost", db="BOT_TEXT", user="root", charset="utf8")
-#connector = MySQLdb.connect(host="localhost", db="BOT_TEXT", user="root", passwd="summer", charset="utf8")
+#connector = MySQLdb.connect(host="localhost", db="BOT", user="root", charset="utf8")
+connector = MySQLdb.connect(host="localhost", db="BOT", user="root", passwd="summer", charset="utf8")
+
+# BASIC認証のユーザ名とパスワード
+USERNAME = "16shinsotsu"
+PASSWORD = "16shinsotsu"
+
+
+def check(username, password):
+    return username == USERNAME and password == PASSWORD
 
 @route('/botwords/css/<filename>')
 def css_dir(filename):
@@ -39,12 +48,22 @@ def font_dir(filename):
 def index():
   return template(TEMPLATE_PATH+'/index')
 
-@route("/botwords", method='POST')
+@route('/botwords', method='POST')
 def add_word():
     call = request.forms.get('call')
     response = request.forms.get('response')
     flag = make_script(call,response)
     return flag
+
+@route('/botwords/show')
+@auth_basic(check)
+def show_db():
+    cursor = connector.cursor()
+    cursor.execute("SELECT * FROM BOT.WORDS")
+    result = cursor.fetchall()
+    print json.dumps(result)
+    cursor.close()
+    return template(TEMPLATE_PATH+'/show', result=json.dumps(result))
 
 def make_script(call,response):
     todayDate = datetime.datetime.today()
