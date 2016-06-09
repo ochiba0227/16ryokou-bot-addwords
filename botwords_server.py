@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-import datetime
-import random
 import json
 import MySQLdb
 
@@ -15,10 +13,8 @@ TEMPLATE_PATH = BASE_DIR + "/views"
 # coffeeスクリプトを配置するパスを指定
 COFFEE_PATH = os.environ.get("COFFEE_PATH")
 
-source_str = 'abcdefghijklmnopqrstuvwxyz'
-
-#connector = MySQLdb.connect(host="localhost", db="BOT", user="root", charset="utf8")
-connector = MySQLdb.connect(host="localhost", db="BOT", user="root", passwd="summer", charset="utf8")
+connector = MySQLdb.connect(host="localhost", db="BOT", user="root", charset="utf8")
+#connector = MySQLdb.connect(host="localhost", db="BOT", user="root", passwd="summer", charset="utf8")
 
 # BASIC認証のユーザ名とパスワード
 USERNAME = "16shinsotsu"
@@ -61,15 +57,10 @@ def show_db():
     cursor = connector.cursor()
     cursor.execute("SELECT * FROM BOT.WORDS")
     result = cursor.fetchall()
-    print json.dumps(result)
     cursor.close()
     return template(TEMPLATE_PATH+'/show', result=json.dumps(result))
 
 def make_script(call,response):
-    todayDate = datetime.datetime.today()
-    randstr = "".join([random.choice(source_str) for x in xrange(5)])
-    filename = "{0}-{1}.coffee".format(todayDate.strftime("%Y%m%d%H%M%S"),randstr)
-
     # 話しかける言葉のリスト
     call_list = split_text(replace_reg(call))
     if(len(call_list)==0):
@@ -80,24 +71,9 @@ def make_script(call,response):
     if(len(response_list)==0):
         return 'error'
 
-    # 話しかける言葉（スクリプト用）
-    call = '|'.join(call_list)
+    # DBへ書き込み&ファイル書き出し
+    write_words(call_list,response_list)
 
-    # 返事（スクリプト用）
-    length = len(response_list)
-    response = 'msg.random ['
-    for i in range(length):
-        response = response + '"' + response_list[i] + '"'
-        if(i<length-1):
-            response = response + ','
-    response = response + ']'
-
-    writer = open(os.path.join(COFFEE_PATH,filename),'w')
-    writer.write('module.exports = (robot) ->\n')
-    writer.write('\trobot.hear /^@16ryokou-bot.*({0}).*/i, (msg) ->\n \t\tmsg.send {1}\n \t\tmsg.finish()\n'.format(call,response))
-    writer.close()
-
-    write_db(call_list,",".join(response_list),filename)
     return ''
 
 # 分割し、空白を捨てて、リスト型を返す
@@ -125,13 +101,47 @@ def replace_reg(text):
     return text;
 
 # DBへ書き込み
-def write_db(call_list,response,filename):
+def write_words(call_list,response_list):
     cursor = connector.cursor()
     for call in call_list:
-        sql = 'insert into BOT.WORDS values("{0}","{1}","{2}")'.format(call,response,filename)
-        cursor.execute(sql)
-    # ここで書き込まれる
-    connector.commit()
+        for response in response_list:
+            cursor.execute('select RESPONSE_WORD from BOT.WORDS where CALL_WORD = "{0}" and RESPONSE_WORD = "{1}"'.format(call,response))
+            words = cursor.fetchall()
+            # 言葉の組が存在しなければ追加
+            if(len(words)==0):
+                sql = 'insert into BOT.WORDS (CALL_WORD,RESPONSE_WORD) values("{0}","{1}")'.format(call,response)
+                cursor.execute(sql)
+                # ここでDBへ書き込まれる
+                connector.commit()
+        # ファイル書き出し
+        words_to_file(call)
     cursor.close()
+
+# ファイルへ書き出し
+def words_to_file(call):
+    # 話しかけた言葉に対してbotがしゃべる言葉をDBから取得
+    cursor = connector.cursor()
+    cursor.execute('select ID,RESPONSE_WORD from BOT.WORDS where CALL_WORD = "{0}"'.format(call))
+    words = cursor.fetchall()
+    cursor.close()
+
+    # ファイル名は一番上のid
+    filename = '{0}.coffee'.format(words[0][0])
+
+    # ファイル書き込み準備
+    response = '['
+    length = len(words)
+    for i in range(length):
+        response = response + '"{0}"'.format(words[i][1].encode('utf-8'))
+        if(i<length-1):
+            response = response + ','
+    response = response + ']'
+
+    writer = open(os.path.join(COFFEE_PATH,filename),'w')
+    writer.write('# Commands:\n')
+    writer.write('# hubot {0}\n'.format(call))
+    writer.write('module.exports = (robot) ->\n')
+    writer.write('\trobot.respond /{0}$/i, (msg) ->\n \t\tmsg.send msg.random {1}\n \t\tmsg.finish()\n'.format(call,response))
+    writer.close()
 
 run(host='localhost', port=9000)

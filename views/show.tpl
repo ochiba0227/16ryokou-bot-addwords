@@ -29,9 +29,9 @@
         <table data-toggle="table" id='contentTable'>
           <thead class='btn-primary'>
               <tr>
+                  <th>ID</th>
                   <th>話しかける人の言葉</th>
                   <th>返信</th>
-                  <th>ファイル名</th>
               </tr>
           </thead>
           <tbody id='resultBody'>
